@@ -136,6 +136,7 @@ summary .bar{grid-column:1/-1}
 <script>
 let WORKS = [];
 let worksMsg = "Sign in with Google to load the 96 works.";
+let needList = false, fsRef = null;
 const ITEMS = [
   ["given","Given to contractor for signature"],
   ["ce","Signed by CE"],
@@ -188,7 +189,7 @@ function render(){
   const allByBidder = b => scope.filter(w=>w.bidder===b);
   const order = [...groups.keys()].sort((a,b)=>allByBidder(b).length-allByBidder(a).length || a.localeCompare(b));
   const list = document.getElementById("list");
-  if (!order.length){ list.innerHTML = `<div class="empty">${WORKS.length ? "No works match. Clear the search or switch the status filter." : esc(worksMsg)}</div>`; return; }
+  if (!order.length){ list.innerHTML = `<div class="empty">${WORKS.length ? "No works match. Clear the search or switch the status filter." : esc(worksMsg)}${!WORKS.length && needList ? `<div style="margin-top:12px"><label class="rowact" for="listFile" style="cursor:pointer">Choose work-list.json</label><input type="file" id="listFile" accept=".json,application/json" hidden></div>` : ""}</div>`; return; }
 
   list.innerHTML = order.map(b => {
     const ws = groups.get(b), all = allByBidder(b);
@@ -317,6 +318,16 @@ document.addEventListener("toggle", e => {
   const d = e.target; if (!d.matches?.("details.bidder")) return;
   d.open ? open.add(d.dataset.b) : open.delete(d.dataset.b); saveUI();
 }, true);
+document.addEventListener("change", async e => {
+  if (e.target.id !== "listFile" || !e.target.files[0] || !fsRef) return;
+  try {
+    const list = JSON.parse(await e.target.files[0].text());
+    if (!Array.isArray(list) || !list.length || !list[0].pkg) throw new Error("That file isn't the work list.");
+    setStatus("Saving the work list…");
+    await fsRef.doc("meta/works").set({list});
+    setStatus("Work list saved · " + list.length + " works");
+  } catch(err){ setStatus("Couldn't load the file: " + (err.code || err.message)); }
+});
 document.getElementById("q").addEventListener("input", e => { filt.q = e.target.value; render(); });
 function syncSeg(){
   document.querySelectorAll("[data-set]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.set===filt.set));
@@ -328,7 +339,7 @@ syncSeg(); render();
   const cfg = window.FIREBASE_CONFIG;
   if (!window.firebase || !cfg || !cfg.apiKey){ setStatus("Sync isn't set up yet. Ticks are saved on this device only."); return; }
   firebase.initializeApp(cfg);
-  const auth = firebase.auth(), fs = firebase.firestore();
+  const auth = firebase.auth(), fs = firebase.firestore(); fsRef = fs;
   const btn = document.getElementById("auth");
   btn.hidden = false; canWrite = false; render();
   btn.onclick = async () => {
@@ -343,14 +354,14 @@ syncSeg(); render();
   let unsub = null;
   auth.onAuthStateChanged(u => {
     if (unsub){ unsub(); unsub = null; }
-    if (!u){ db = null; canWrite = false; WORKS = []; worksMsg = "Sign in with Google to load the 96 works."; btn.textContent = "Sign in with Google"; setStatus("Sign in to see and save the shared ticks."); render(); return; }
+    if (!u){ db = null; canWrite = false; WORKS = []; needList = false; worksMsg = "Sign in with Google to load the 96 works."; btn.textContent = "Sign in with Google"; setStatus("Sign in to see and save the shared ticks."); render(); return; }
     btn.textContent = "Sign out";
     setStatus("Loading shared ticks…");
     let first = true;
     const unList = fs.doc("meta/works").onSnapshot(doc => {
       const list = doc.exists ? doc.data().list : null;
-      if (list && list.length){ WORKS = list; render(); return; }
-      WORKS = []; worksMsg = "The work list hasn't been loaded into the database yet.";
+      if (list && list.length){ WORKS = list; needList = false; render(); return; }
+      WORKS = []; needList = true; worksMsg = "The work list isn't in the database yet. Load it once from work-list.json in the checklist-website folder.";
       if (window.SEED_WORKS){
         worksMsg = "Loading the work list into the database…";
         fs.doc("meta/works").set({list: window.SEED_WORKS}).catch(e => setStatus("Couldn't load the work list (" + e.code + ")."));

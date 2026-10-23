@@ -345,10 +345,14 @@ syncSeg(); render();
   btn.onclick = async () => {
     if (auth.currentUser) { auth.signOut(); return; }
     const p = new firebase.auth.GoogleAuthProvider();
+    setStatus("Opening Google sign-in…");
     try { await auth.signInWithPopup(p); }
     catch(e){
-      if (["auth/popup-blocked","auth/operation-not-supported-in-this-environment","auth/cancelled-popup-request"].includes(e.code)) auth.signInWithRedirect(p);
-      else if (e.code !== "auth/popup-closed-by-user") setStatus("Sign-in failed: " + e.message);
+      // Redirect sign-in silently fails here (the sign-in helper lives on another domain), so stay with the popup.
+      if (e.code === "auth/popup-blocked") setStatus("Your browser blocked the sign-in popup. Allow pop-ups for this site (icon at the right of the address bar), then click Sign in again.");
+      else if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") setStatus("Sign-in was closed before finishing. Click Sign in with Google to try again.");
+      else if (e.code === "auth/unauthorized-domain") setStatus("Sign-in isn't allowed from this web address yet (" + location.hostname + ").");
+      else setStatus("Sign-in failed (" + e.code + "): " + e.message);
     }
   };
   let unsub = null;
